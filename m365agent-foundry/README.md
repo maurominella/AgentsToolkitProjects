@@ -11,13 +11,13 @@ It showcases an agent app that responds to user questions like ChatGPT. This ena
 >
 > - [Node.js](https://nodejs.org/), supported versions: 22.
 > - [Microsoft 365 Agents Toolkit Visual Studio Code Extension](https://aka.ms/teams-toolkit) latest version or [Microsoft 365 Agents Toolkit CLI](https://aka.ms/teamsfx-toolkit-cli).
-> - Prepare your own [Azure OpenAI](https://aka.ms/oai/access) resource.
+> - Prepare a Microsoft Foundry agent and its Responses API endpoint.
 
 > For local debugging using Microsoft 365 Agents Toolkit CLI, you need to do some extra steps described in [Set up your Microsoft 365 Agents Toolkit CLI for local debugging](https://aka.ms/teamsfx-cli-debugging).
 
 1. First, select the Microsoft 365 Agents Toolkit icon on the left in the VS Code toolbar.
-1. In file *env/.env.playground.user*, configure `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_DEPLOYMENT_NAME` for your Azure OpenAI resource.
-1. Run `az login` with an identity that has the **Cognitive Services OpenAI User** role on that resource. Azure OpenAI authentication uses Entra ID, not an API key.
+1. In file *env/.env.playground.user*, configure `FOUNDRY_AGENT_ENDPOINT` and `FOUNDRY_API_VERSION` for your Foundry agent.
+1. Run `az login` if you want to fall back to your own user (only when `FOUNDRY_ENABLED_APP_ID` is not set). Authentication uses Entra ID, not an API key.
 1. Press F5 to start debugging which launches your app in Microsoft 365 Agents Playground using a web browser. Select `Debug in Microsoft 365 Agents Playground`.
 1. You can send any message to get a response from the agent.
 
@@ -27,24 +27,29 @@ It showcases an agent app that responds to user questions like ChatGPT. This ena
 
 ## What's included in the template
 
-### Direct Azure OpenAI HTTP calls
+### Direct Foundry Agent Responses API calls
 
-[src/app/openai-http.ts](./src/app/openai-http.ts) uses `fetch()` from the existing `undici` dependency to POST to
-`{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version=2024-10-21`.
-It does not use `ChatPrompt`, `OpenAIChatModel`, or the OpenAI SDK.
+[src/app/foundry-responses.ts](./src/app/foundry-responses.ts) uses `fetch()` from the existing `undici` dependency to POST
+`{"input": [...], "stream": ...}` to `{FOUNDRY_AGENT_ENDPOINT}?api-version={FOUNDRY_API_VERSION}`.
+The Foundry agent carries its own instructions, so only the conversation history is sent.
 
-Personal chats request `stream: true` and forward SSE text deltas to Teams as they arrive.
-Group chats request a complete JSON response and send it once. Both paths include the system
-instructions and conversation history; successful turns are saved in local, in-memory storage.
-HTTP errors, invalid responses, and streams interrupted before `[DONE]` reach the app's existing
-error handler. Requests have a ten-minute timeout and do not automatically retry.
-The HTTP client limits TLS negotiation to TLS 1.2 for these requests because Node's default
-TLS handshake produces `ECONNRESET` on the current network. Certificate validation remains
-enabled; no global TLS settings are changed. The SSE streaming behavior is unchanged.
+Personal chats request `stream: true` and forward `response.output_text.delta` SSE events to Teams as they arrive.
+Group chats request a complete JSON response and send it once. Successful turns are saved in local, in-memory storage.
+HTTP errors, invalid responses, `response.failed` events and streams interrupted before `response.completed`
+reach the app's existing error handler. Requests have a ten-minute timeout and do not automatically retry.
+The HTTP client limits TLS negotiation to TLS 1.2 because Node's default TLS handshake produces
+`ECONNRESET` on the current network. Certificate validation remains enabled; no global TLS settings are changed.
 
-Locally, the bearer token comes from `AzureCliCredential`; with `RUNNING_ON_AZURE=1`, it comes
-from the user-assigned managed identity specified by `CLIENT_ID`. That identity needs the same
-Azure OpenAI role. Teams authentication and message delivery still use the Teams SDK.
+The bearer token (scope `https://ai.azure.com/.default`) is chosen as follows:
+
+1. If `FOUNDRY_ENABLED_APP_ID` is set, an app-token is requested with `ClientSecretCredential` using
+   `FOUNDRY_ENABLED_APP_ID`, `FOUNDRY_ENABLED_APP_SECRET` (in `env/.env.*.user`, git-ignored) and
+   `FOUNDRY_ENABLED_APP_TENANT_ID`. This is the local-test path.
+2. Otherwise, with `RUNNING_ON_AZURE=1` (Azure), the user-assigned managed identity specified by `CLIENT_ID` is used.
+   It needs access to the Foundry project.
+3. Otherwise, `AzureCliCredential` (`az login`).
+
+Teams authentication and message delivery still use the Teams SDK.
 
 Run `npm test` for local HTTP tests (no Azure credentials needed), and `npm run build` to compile.
 

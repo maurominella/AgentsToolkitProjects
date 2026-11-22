@@ -5,11 +5,11 @@
     "resourceBaseName": {
       "value": "bot${{RESOURCE_SUFFIX}}"
     },
-    "azureOpenAIEndpoint": {
-      "value": "${{AZURE_OPENAI_ENDPOINT}}"
+    "foundryAgentEndpoint": {
+      "value": "${{FOUNDRY_AGENT_ENDPOINT}}"
     },
-    "azureOpenAIDeploymentName": {
-      "value": "${{AZURE_OPENAI_DEPLOYMENT_NAME}}"
+    "foundryApiVersion": {
+      "value": "${{FOUNDRY_API_VERSION}}"
     },
     "webAppSKU": {
       "value": "B1"

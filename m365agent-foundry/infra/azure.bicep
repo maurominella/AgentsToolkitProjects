@@ -7,10 +7,10 @@ param resourceBaseName string
 param azureOpenAIKey string
 
 @secure()
-param azureOpenAIEndpoint string
+param foundryAgentEndpoint string
 
 @secure()
-param azureOpenAIDeploymentName string
+param foundryApiVersion string
 
 param webAppSKU string
 
@@ -73,12 +73,12 @@ resource webApp 'Microsoft.Web/sites@2021-02-01' = {
           value: 'UserAssignedMsi'
         }
         {
-          name: 'AZURE_OPENAI_ENDPOINT'
-          value: azureOpenAIEndpoint
+          name: 'FOUNDRY_AGENT_ENDPOINT'
+          value: foundryAgentEndpoint
         }
         {
-          name: 'AZURE_OPENAI_DEPLOYMENT_NAME'
-          value: azureOpenAIDeploymentName
+          name: 'FOUNDRY_API_VERSION'
+          value: foundryApiVersion
         }
       ]
       ftpsState: 'FtpsOnly'

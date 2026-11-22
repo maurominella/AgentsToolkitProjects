@@ -1,34 +1,32 @@
 import { App } from "@microsoft/teams.apps";
 import { LocalStorage } from "@microsoft/teams.common";
 import { MessageActivityInput, TokenCredentials } from '@microsoft/teams.api';
-import { ManagedIdentityCredential, AzureCliCredential, getBearerTokenProvider } from '@azure/identity';
+import { ManagedIdentityCredential, AzureCliCredential, ClientSecretCredential, TokenCredential, getBearerTokenProvider } from '@azure/identity';
 
-import * as fs from 'fs';
-import * as path from 'path';
 import config from "../config";
-import { ChatMessage, sendChatCompletion } from "./openai-http";
+import { ChatMessage, sendResponse } from "./foundry-responses";
 
-// On Azure use the bot's User-Assigned MI, locally use the az login user
-const azureOpenAICredential = process.env.RUNNING_ON_AZURE === '1'
-  ? new ManagedIdentityCredential({ clientId: process.env.CLIENT_ID })
-  : new AzureCliCredential();
+// With FOUNDRY_ENABLED_APP_ID (local runs) request an app-token for Foundry using the app's client secret.
+// Without it, on Azure use the bot's User-Assigned MI, otherwise the az login user.
+function createFoundryCredential(): TokenCredential {
+  if (config.foundryAppId) {
+    if (!config.foundryAppSecret || !config.foundryAppTenantId) {
+      throw new Error("FOUNDRY_ENABLED_APP_SECRET and FOUNDRY_ENABLED_APP_TENANT_ID are required with FOUNDRY_ENABLED_APP_ID.");
+    }
+    return new ClientSecretCredential(config.foundryAppTenantId, config.foundryAppId, config.foundryAppSecret);
+  }
+  return process.env.RUNNING_ON_AZURE === '1'
+    ? new ManagedIdentityCredential({ clientId: process.env.CLIENT_ID })
+    : new AzureCliCredential();
+}
 
 const azureADTokenProvider = getBearerTokenProvider(
-  azureOpenAICredential,
-  "https://cognitiveservices.azure.com/.default"
+  createFoundryCredential(),
+  "https://ai.azure.com/.default"
 );
 
 // Create storage for conversation history
 const storage = new LocalStorage<ChatMessage[]>();
-
-// Load instructions from file on initialization
-function loadInstructions(): string {
-  const instructionsFilePath = path.join(__dirname, "instructions.txt");
-  return fs.readFileSync(instructionsFilePath, 'utf-8').trim();
-}
-
-// Load instructions once at startup
-const instructions = loadInstructions();
 
 const createTokenFactory = () => {
   return async (scope: string | string[], tenantId?: string): Promise<string> => {
@@ -66,33 +64,30 @@ app.on('message', async ({ send, stream, activity }) => {
   const messages = storage.get(conversationKey) || [];
 
   try {
-    const endpoint = config.azureOpenAIEndpoint;
-    const deployment = config.azureOpenAIDeploymentName;
-    if (!endpoint || !deployment) {
-      throw new Error("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT_NAME are required.");
+    const endpoint = config.foundryAgentEndpoint;
+    const apiVersion = config.foundryApiVersion;
+    if (!endpoint || !apiVersion) {
+      throw new Error("FOUNDRY_AGENT_ENDPOINT and FOUNDRY_API_VERSION are required.");
     }
 
     const userMessage: ChatMessage = { role: "user", content: activity.text.trim() };
+    // The Foundry agent carries its own instructions, so only the conversation is sent.
     const request = {
       endpoint,
-      deployment,
+      apiVersion,
       accessToken: await azureADTokenProvider(),
-      messages: [
-        ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
-        ...messages,
-        userMessage,
-      ],
+      messages: [...messages, userMessage],
     };
     let content: string;
 
     if (activity.conversation.isGroup) {
       // If the conversation is a group chat, we need to send the final response
       // back to the group chat
-      content = await sendChatCompletion(request);
+      content = await sendResponse(request);
       const responseActivity = new MessageActivityInput(content).addAiGenerated().addFeedback();
       await send(responseActivity);
     } else {
-      content = await sendChatCompletion({
+      content = await sendResponse({
         ...request,
         onChunk: (chunk) => {
           stream.emit(chunk);

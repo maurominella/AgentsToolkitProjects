@@ -1,11 +1,17 @@
+import { ReadableStream } from "node:stream/web";
+import { Agent, fetch } from "undici";
+
+// Node's default TLS handshake is reset on this network; keep certificate verification enabled.
+const dispatcher = new Agent({ connect: { maxVersion: "TLSv1.2" } });
+
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "user" | "assistant";
   content: string;
 }
 
-interface ChatCompletionOptions {
+interface ResponsesOptions {
   endpoint: string;
-  deployment: string;
+  apiVersion: string;
   accessToken: string;
   messages: ChatMessage[];
   onChunk?: (chunk: string) => void | Promise<void>;
@@ -15,32 +21,34 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseCompletion(data: string): unknown[] {
+function parsePayload(data: string): Record<string, unknown> {
   const payload: unknown = JSON.parse(data);
   if (!isObject(payload)) {
-    throw new Error("Invalid Azure OpenAI response.");
+    throw new Error("Invalid Foundry response.");
   }
   if (payload.error) {
-    throw new Error(`Azure OpenAI error: ${JSON.stringify(payload.error)}`);
+    throw new Error(`Foundry error: ${JSON.stringify(payload.error)}`);
   }
-  if (!Array.isArray(payload.choices)) {
-    throw new Error("Azure OpenAI response is missing choices.");
-  }
-  return payload.choices;
+  return payload;
 }
 
-function readContent(choice: unknown, field: "delta" | "message"): string {
-  if (!isObject(choice) || !isObject(choice[field])) {
-    throw new Error(`Invalid Azure OpenAI ${field}.`);
+// Concatenates the text of every output_text part of every message item.
+function readOutputText(response: Record<string, unknown>): string {
+  if (!Array.isArray(response.output)) {
+    throw new Error("Foundry response is missing output.");
   }
-  const content = choice[field].content;
-  if (content === undefined || content === null) {
-    return "";
+  let text = "";
+  for (const item of response.output) {
+    if (!isObject(item) || item.type !== "message" || !Array.isArray(item.content)) {
+      continue;
+    }
+    for (const part of item.content) {
+      if (isObject(part) && part.type === "output_text" && typeof part.text === "string") {
+        text += part.text;
+      }
+    }
   }
-  if (typeof content !== "string") {
-    throw new Error("Invalid Azure OpenAI response content.");
-  }
-  return content;
+  return text;
 }
 
 async function* readEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
@@ -84,14 +92,12 @@ async function* readEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<str
   }
 }
 
-export async function sendChatCompletion(options: ChatCompletionOptions): Promise<string> {
-  if (!options.endpoint || !options.deployment) {
-    throw new Error("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT_NAME are required.");
+export async function sendResponse(options: ResponsesOptions): Promise<string> {
+  if (!options.endpoint || !options.apiVersion) {
+    throw new Error("FOUNDRY_AGENT_ENDPOINT and FOUNDRY_API_VERSION are required.");
   }
-  const url = new URL(
-    `${options.endpoint.replace(/\/$/, "")}/openai/deployments/${encodeURIComponent(options.deployment)}/chat/completions`
-  );
-  url.searchParams.set("api-version", "2024-10-21");
+  const url = new URL(options.endpoint);
+  url.searchParams.set("api-version", options.apiVersion);
 
   const response = await fetch(url, {
     dispatcher,
@@ -102,46 +108,48 @@ export async function sendChatCompletion(options: ChatCompletionOptions): Promis
       Accept: options.onChunk ? "text/event-stream" : "application/json",
     },
     body: JSON.stringify({
-      messages: options.messages,
+      input: options.messages,
       stream: !!options.onChunk,
     }),
     signal: AbortSignal.timeout(600_000),
   });
 
   if (!response.ok) {
-    throw new Error(`Azure OpenAI HTTP ${response.status}: ${await response.text()}`);
+    throw new Error(`Foundry HTTP ${response.status}: ${await response.text()}`);
   }
   if (!options.onChunk) {
-    const choices = parseCompletion(await response.text());
-    return readContent(choices[0], "message");
+    return readOutputText(parsePayload(await response.text()));
   }
   if (!response.headers.get("content-type")?.toLowerCase().startsWith("text/event-stream")) {
-    throw new Error("Expected an Azure OpenAI SSE response.");
+    throw new Error("Expected a Foundry SSE response.");
   }
   if (!response.body) {
-    throw new Error("Azure OpenAI response has no streaming body.");
+    throw new Error("Foundry response has no streaming body.");
   }
 
   let content = "";
   for await (const event of readEvents(response.body)) {
     if (event === "[DONE]") {
-      return content;
+      break;
     }
-    const choices = parseCompletion(event);
-    if (choices.length === 0) {
-      continue;
-    }
-    const chunk = readContent(choices[0], "delta");
-    if (chunk) {
-      content += chunk;
-      await options.onChunk(chunk);
+    const payload = parsePayload(event);
+    switch (payload.type) {
+      case "response.output_text.delta": {
+        if (typeof payload.delta !== "string") {
+          throw new Error("Invalid Foundry response content.");
+        }
+        if (payload.delta) {
+          content += payload.delta;
+          await options.onChunk(payload.delta);
+        }
+        break;
+      }
+      case "response.completed":
+        return content;
+      case "response.failed":
+      case "response.incomplete":
+        throw new Error(`Foundry ${payload.type}: ${JSON.stringify(payload.response)}`);
     }
   }
-  throw new Error("Azure OpenAI stream ended before [DONE].");
+  throw new Error("Foundry stream ended before response.completed.");
 }
-import { ReadableStream } from "node:stream/web";
-import { Agent, fetch } from "undici";
-
-// Node's default TLS handshake is reset on this network; keep certificate verification enabled.
-const dispatcher = new Agent({ connect: { maxVersion: "TLSv1.2" } });
-
