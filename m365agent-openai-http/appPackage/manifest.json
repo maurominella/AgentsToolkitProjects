@@ -14,12 +14,12 @@
         "outline": "outline.png"
     },
     "name": {
-        "short": "m365agent-openai-integratedauth${{APP_NAME_SUFFIX}}",
-        "full": "full name for m365agent-openai-integratedauth"
+        "short": "m365agent-openai-http${{APP_NAME_SUFFIX}}",
+        "full": "full name for m365agent-openai-http"
     },
     "description": {
-        "short": "short description for m365agent-openai-integratedauth",
-        "full": "full description for m365agent-openai-integratedauth"
+        "short": "short description for m365agent-openai-http",
+        "full": "full description for m365agent-openai-http"
     },
     "accentColor": "#FFFFFF",
     "supportsChannelFeatures": "tier1",

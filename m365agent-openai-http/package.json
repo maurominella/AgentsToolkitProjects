@@ -1,5 +1,5 @@
 {
-    "name": "m365agent-openai-integratedauth",
+    "name": "m365agent-openai-http",
     "version": "1.0.0",
     "msteams": {
         "teamsAppId": null
