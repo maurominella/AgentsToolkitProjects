@@ -53,6 +53,34 @@ Teams authentication and message delivery still use the Teams SDK.
 
 Run `npm test` for local HTTP tests (no Azure credentials needed), and `npm run build` to compile.
 
+## Provision and deploy to Azure
+
+1. In `env/.env.dev`, set `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP_NAME`,
+   `FOUNDRY_AGENT_ENDPOINT`, and `FOUNDRY_API_VERSION`.
+   The cloud template uses Entra ID authentication and does not require an Azure OpenAI API key.
+1. Run **Microsoft 365 Agents: Provision** for the `dev` environment to create the Azure hosting
+   resources, user-assigned managed identity, bot registration, and Teams app package.
+1. Grant the provisioned user-assigned managed identity access to the target Foundry project
+   (the **Azure AI User** role at project scope). Its client ID is written to `BOT_ID` in
+   `env/.env.dev`. The local `FOUNDRY_ENABLED_APP_*` credentials are not deployed to Azure.
+1. Run **Microsoft 365 Agents: Deploy** for `dev` to publish the application code to App Service.
+   A successful Playground deploy only prepares local debugging; it does not deploy to Azure.
+
+If Provision reports that the ARM parameter `azureOpenAIKey` is missing, use the updated
+`infra/azure.bicep`: that unused parameter belonged to the original Azure OpenAI template.
+Do not add an API key to work around it. If Toolkit login errors persist, sign out of the
+Azure account in the Toolkit, reload the VS Code window, sign in again, and select the
+subscription in the intended tenant before retrying.
+
+### Agent 365 registration
+
+The lifecycle in `m365agents.yml` provisions Azure/Teams resources and publishes to the
+Teams admin center; it does not create an Agent 365 identity blueprint or register the
+agent with Agent 365. Follow the separate
+[Agent 365 onboarding workflow](https://learn.microsoft.com/en-us/microsoft-agent-365/admin/agent-365-onboarding-cli)
+for tenant prerequisites, identity configuration, consent, and registration.
+Agent 365 onboarding does not replace deploying the bot's hosting resources and code.
+
 | Folder       | Contents                                            |
 | - | - |
 | `.vscode`    | VSCode files for debugging                          |

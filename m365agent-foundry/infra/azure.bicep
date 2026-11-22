@@ -4,9 +4,6 @@
 param resourceBaseName string
 
 @secure()
-param azureOpenAIKey string
-
-@secure()
 param foundryAgentEndpoint string
 
 @secure()
