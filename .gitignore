@@ -1,0 +1,51 @@
+# Microsoft 365 Agents Toolkit: private environment values and local state
+.env*.user
+.localConfigs*
+.notification.*store.json
+.deployment
+appPackage/build/
+devTools/
+
+# Node.js / TypeScript
+node_modules/
+lib/
+dist/
+build/
+*.tsbuildinfo
+.npm/
+.yarn/cache/
+coverage/
+*.log
+
+# Python (do not ignore env/: it contains shared Toolkit configuration)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+.ipynb_checkpoints/
+
+# .NET
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+TestResults/
+*.nupkg
+*.snupkg
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
